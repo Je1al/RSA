@@ -14,6 +14,8 @@
     bool exported_get_bigint_bit(const BigInt& a, size_t index);
     BigInt exported_generate_random_bigint(size_t bits);
     BigInt exported_random_in_range(const BigInt& min, const BigInt& max);
+    // Fast remainder of a BigInt by a small (<= 32-bit) modulus, O(words).
+    uint32_t exported_mod_small(const BigInt& a, uint32_t m);
 
 
 #endif // BIGMATH_INTERNAL_HPP

@@ -42,6 +42,12 @@ public:
 
         // q^-1 mod p
         std::shared_ptr<BigInt> qinv;
+
+        // Public exponent. Held only for in-memory keys so decryption can apply
+        // base blinding (a timing/fault-attack mitigation). May be null for keys
+        // loaded from disk, in which case decryption runs CRT without blinding.
+        std::shared_ptr<BigInt> e;
+
         size_t bitlen = 0;
     };
 

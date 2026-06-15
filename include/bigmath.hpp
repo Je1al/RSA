@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <string>
 #include <memory>
+#include <vector>
 
 class BigInt
 {
@@ -36,6 +37,18 @@ public:
     static BigInt modNaive(const BigInt& a, const BigInt& m);
     static BigInt modExp(const BigInt& base, const BigInt& exp, const BigInt& mod);
     static BigInt divmod(const BigInt& a, const BigInt& b, BigInt* remainder);
+
+    // Number of significant bits / bytes (0 for the value 0).
+    size_t bitLength() const;
+    size_t byteLength() const;
+
+    // Big-endian octet-string conversions (RFC 8017: I2OSP / OS2IP).
+    // toBytesBE(length) left-pads with zeros to exactly `length` bytes and throws
+    // std::overflow_error if the integer does not fit.
+    std::vector<uint8_t> toBytesBE(size_t length) const;
+    std::vector<uint8_t> toBytesBE() const;  // minimal length
+    static BigInt fromBytesBE(const uint8_t* data, size_t len);
+    static BigInt fromBytesBE(const std::vector<uint8_t>& data);
 
 private:
 
@@ -73,13 +86,13 @@ private:
     std::unique_ptr<BigInt> mod_; 
 
     // R
-    std::unique_ptr<BigInt> R_;     
+    std::unique_ptr<BigInt> R_;
 
-    // R^{-1} mod N
-    std::unique_ptr<BigInt> R_inv_;    
+    // R^2 mod N (lets toMont use a Montgomery multiply instead of a division)
+    std::unique_ptr<BigInt> R2_;
 
     // -N^{-1} mod base
-    uint32_t nprime_;                  
+    uint32_t nprime_;
     size_t n_words_;
 };
 

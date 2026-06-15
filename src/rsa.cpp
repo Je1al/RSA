@@ -52,6 +52,60 @@ namespace {
     bool isLessThanModulus(const BigInt& m, const BigInt& n) {
         return m.cmp(n) < 0;
     }
+
+    // RSA decryption via the Chinese Remainder Theorem (Garner's formula).
+    // ~3-4x faster than a full c^d mod n exponentiation because the two
+    // exponentiations run modulo the half-size primes p and q.
+    //
+    //   m1 = c^dp mod p
+    //   m2 = c^dq mod q
+    //   h  = qinv * (m1 - m2) mod p
+    //   m  = m2 + h*q
+    BigInt crtDecrypt(const BigInt& c, const RSA::PrivateKey& priv) {
+        const BigInt& p = *priv.p;
+        const BigInt& q = *priv.q;
+
+        BigInt m1 = BigInt::modExp(BigInt::modNaive(c, p), *priv.dp, p);
+        BigInt m2 = BigInt::modExp(BigInt::modNaive(c, q), *priv.dq, q);
+
+        // t = (m1 - m2) mod p, kept non-negative.
+        BigInt m2modp = BigInt::modNaive(m2, p);
+        BigInt t;
+        if (m1.cmp(m2modp) >= 0) {
+            t = exported_internal_sub(m1, m2modp);
+        } else {
+            t = exported_internal_sub(exported_internal_add(m1, p), m2modp);
+        }
+        t = BigInt::modNaive(t, p);
+
+        BigInt h = BigInt::modNaive(BigInt::mulNaive(*priv.qinv, t), p);
+        return exported_internal_add(m2, BigInt::mulNaive(h, q));
+    }
+
+    bool hasCrtParams(const RSA::PrivateKey& priv) {
+        return priv.p && priv.q && priv.dp && priv.dq && priv.qinv;
+    }
+
+    // Base blinding: decrypt c' = c * r^e instead of c, then unblind with r^-1.
+    // The exponentiation therefore operates on a value the attacker cannot
+    // control or observe, defeating timing and many fault attacks (Kocher 1996).
+    BigInt blindedCrtDecrypt(const BigInt& c, const RSA::PrivateKey& priv) {
+        const BigInt& n = *priv.n;
+        BigInt one  = BigInt::fromU64(1);
+        BigInt nm1  = exported_internal_sub(n, one);
+
+        for (int attempt = 0; attempt < 16; ++attempt) {
+            BigInt r    = exported_random_in_range(BigInt::fromU64(2), nm1);
+            BigInt rinv = exported_mod_inverse_binary(r, n);
+            if (rinv.cmp(BigInt::fromU64(0)) == 0) continue;  // r not invertible mod n
+
+            BigInt re = BigInt::modExp(r, *priv.e, n);
+            BigInt cb = BigInt::modNaive(BigInt::mulNaive(c, re), n);
+            BigInt mb = crtDecrypt(cb, priv);
+            return BigInt::modNaive(BigInt::mulNaive(mb, rinv), n);
+        }
+        return crtDecrypt(c, priv);  // extremely unlikely fallback
+    }
 }
 
 // Implementation of static methods of RSA class
@@ -143,6 +197,7 @@ bool RSA::generateKeys(PublicKey& pub, PrivateKey& priv, size_t bits, uint32_t e
         priv.d = d;
         priv.p = p;
         priv.q = q;
+        priv.e = e;  // kept in-memory to enable blinding during decryption
         priv.bitlen = bits;
 
         // Compute additional parameters for CRT (optimization)
@@ -240,9 +295,17 @@ shared_ptr<BigInt> RSA::decrypt(const BigInt& c, const PrivateKey& priv) {
             throw invalid_argument("Ciphertext must be less than modulus n");
         }
 
-        // Decryption: m = c^d mod n
-        BigInt result = BigInt::modExp(c, *priv.d, *priv.n);
-        return make_shared<BigInt>(result);
+        // Prefer the CRT path (uses dp, dq, qinv); add base blinding when the
+        // public exponent is available. Fall back to a plain m = c^d mod n only
+        // for keys that lack CRT parameters.
+        if (hasCrtParams(priv)) {
+            if (priv.e) {
+                return make_shared<BigInt>(blindedCrtDecrypt(c, priv));
+            }
+            return make_shared<BigInt>(crtDecrypt(c, priv));
+        }
+
+        return make_shared<BigInt>(BigInt::modExp(c, *priv.d, *priv.n));
 
     }
     catch (const exception& e) {

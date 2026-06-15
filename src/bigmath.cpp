@@ -10,8 +10,7 @@
 #include <limits>
 #include <cmath>
 #include <cstring>
-#include <random>
-#include <chrono>
+#include "rng.hpp"
 
 namespace {
 
@@ -286,14 +285,15 @@ namespace {
         BigInt result(words);
         BigIntAccess& acc = GET_ACCESS(result);
 
-        // Random number generator
-        std::random_device rd;
-        std::mt19937 gen(rd());
-        std::uniform_int_distribution<uint32_t> dis(0, MAX_WORD);
-
-        // Fill words with random values
+        // Pull cryptographically secure bytes from the SP 800-90A HMAC-DRBG.
+        // (The original code used std::mt19937 here, which is fully predictable
+        //  and must never generate key material.)
+        std::vector<uint8_t> rnd = rng::randomBytes(words * 4);
         for (size_t i = 0; i < words; ++i) {
-            acc.digits_[i] = dis(gen);
+            acc.digits_[i] = static_cast<uint32_t>(rnd[i * 4])
+                           | (static_cast<uint32_t>(rnd[i * 4 + 1]) << 8)
+                           | (static_cast<uint32_t>(rnd[i * 4 + 2]) << 16)
+                           | (static_cast<uint32_t>(rnd[i * 4 + 3]) << 24);
         }
 
         // Mask the most significant word to get the required bit length
@@ -308,6 +308,18 @@ namespace {
         normalize(result);
         acc.sign_ = 1;
         return result;
+    }
+
+    // Fast remainder by a small modulus: process words from most significant to
+    // least using 64-bit arithmetic. O(words) divisions instead of the O(bits^2)
+    // shift-and-subtract modNaive — critical for trial division during keygen.
+    uint32_t mod_small(const BigInt& a, uint32_t m) {
+        const BigIntAccess& acc = GET_CONST_ACCESS(a);
+        uint64_t r = 0;
+        for (size_t i = acc.length_; i-- > 0; ) {
+            r = ((r << WORD_BITS) | acc.digits_[i]) % m;
+        }
+        return static_cast<uint32_t>(r);
     }
 
     // Check if a number is even
@@ -387,6 +399,10 @@ BigInt exported_generate_random_bigint(size_t bits) {
 
 BigInt exported_random_in_range(const BigInt& min, const BigInt& max) {
     return random_in_range(min, max);
+}
+
+uint32_t exported_mod_small(const BigInt& a, uint32_t m) {
+    return mod_small(a, m);
 }
 
 // =========================================================================
@@ -656,13 +672,25 @@ BigInt BigInt::modNaive(const BigInt& a, const BigInt& m) {
     return remainder;
 }
 
-// Modular exponentiation (square-and-multiply algorithm)
+// Modular exponentiation.
+//
+// For an odd modulus (every RSA modulus and prime is odd) this dispatches to
+// Montgomery exponentiation, whose inner loop is multiply + reduction with no
+// trial-division step. That is the difference between key generation completing
+// in well under a second versus the minutes the schoolbook-division fallback
+// below would take. The fallback is kept only for the rare even modulus.
 BigInt BigInt::modExp(const BigInt& base, const BigInt& exp, const BigInt& mod) {
     if (mod.cmp(BigInt::fromU64(0)) == 0) throw std::invalid_argument("Modulus cannot be zero");
     if (mod.cmp(BigInt::fromU64(1)) == 0) return BigInt::fromU64(0);
 
     const BigIntAccess& acc_exp = GET_CONST_ACCESS(exp);
     if (acc_exp.length_ == 0) return BigInt::fromU64(1);
+
+    const BigIntAccess& acc_mod = GET_CONST_ACCESS(mod);
+    if (acc_mod.length_ > 0 && (acc_mod.digits_[0] & 1) == 1) {
+        MontgomeryCtx ctx(mod);
+        return ctx.exp(base, exp);
+    }
 
     BigInt result = BigInt::fromU64(1);
     BigInt base_val = BigInt::modNaive(base, mod); // base mod mod
@@ -732,6 +760,69 @@ BigInt BigInt::divmod(const BigInt& a, const BigInt& b, BigInt* remainder) {
 }
 
 // =========================================================================
+// BYTE-STRING CONVERSIONS (RFC 8017 I2OSP / OS2IP)
+// =========================================================================
+
+size_t BigInt::bitLength() const {
+    return count_bits(*this);
+}
+
+size_t BigInt::byteLength() const {
+    return (count_bits(*this) + 7) / 8;
+}
+
+// I2OSP: integer -> big-endian octet string of exactly `length` bytes.
+std::vector<uint8_t> BigInt::toBytesBE(size_t length) const {
+    const BigIntAccess& acc = GET_CONST_ACCESS(*this);
+
+    if (byteLength() > length) {
+        throw std::overflow_error("BigInt does not fit in requested octet length");
+    }
+
+    std::vector<uint8_t> out(length, 0);
+    for (size_t i = 0; i < acc.length_; ++i) {
+        uint32_t w = acc.digits_[i];
+        for (int b = 0; b < 4; ++b) {
+            size_t pos = i * 4 + b;            // byte position counting from LSB
+            if (pos >= length) break;          // higher bytes are zero (checked above)
+            out[length - 1 - pos] = static_cast<uint8_t>((w >> (b * 8)) & 0xFF);
+        }
+    }
+    return out;
+}
+
+std::vector<uint8_t> BigInt::toBytesBE() const {
+    size_t need = byteLength();
+    if (need == 0) return std::vector<uint8_t>();
+    return toBytesBE(need);
+}
+
+// OS2IP: big-endian octet string -> integer.
+BigInt BigInt::fromBytesBE(const uint8_t* data, size_t len) {
+    while (len > 0 && data[0] == 0) { ++data; --len; }  // skip leading zeros
+    if (len == 0) return BigInt(0);
+
+    size_t words = (len + 3) / 4;
+    BigInt result(words);
+    BigIntAccess& acc = GET_ACCESS(result);
+
+    for (size_t i = 0; i < len; ++i) {
+        uint8_t byte = data[len - 1 - i];                // i-th byte from the LSB
+        size_t wi = i / 4;
+        size_t sh = (i % 4) * 8;
+        acc.digits_[wi] |= (static_cast<uint32_t>(byte) << sh);
+    }
+    acc.length_ = words;
+    acc.sign_ = 1;
+    normalize(result);
+    return result;
+}
+
+BigInt BigInt::fromBytesBE(const std::vector<uint8_t>& data) {
+    return fromBytesBE(data.data(), data.size());
+}
+
+// =========================================================================
 // IMPLEMENTATION OF MontgomeryCtx (MONTGOMERY MULTIPLIER)
 // =========================================================================
 
@@ -754,15 +845,15 @@ MontgomeryCtx::MontgomeryCtx(const BigInt& mod) {
     R_ = std::make_unique<BigInt>(BigInt::fromU64(1));
     *R_ = big_lshift(*R_, n_words_ * WORD_BITS);
 
-    try {
-        // Calculate R^{-1} mod N using extended Euclidean algorithm
-        R_inv_ = std::make_unique<BigInt>(mod_inverse_binary(*R_, *mod_));
+    // R^2 mod N via 2*n_words*32 modular doublings. This avoids a slow
+    // division and lets toMont() reuse the fast Montgomery multiply.
+    BigInt r2 = BigInt::fromU64(1);
+    size_t doublings = 2 * n_words_ * WORD_BITS;
+    for (size_t i = 0; i < doublings; ++i) {
+        r2 = internal_add(r2, r2);                  // r2 *= 2
+        if (r2.cmp(*mod_) >= 0) r2 = internal_sub(r2, *mod_);
     }
-    catch (const std::exception& e) {
-        std::cout << "Warning: R_inv calculation failed: " << e.what() << std::endl;
-        // Fallback - use 1 (simplified implementation)
-        R_inv_ = std::make_unique<BigInt>(BigInt::fromU64(1));
-    }
+    R2_ = std::make_unique<BigInt>(r2);
 
     // Calculate n' = -N^{-1} mod 2^32 (for MonPro algorithm)
     uint32_t N0 = acc_mod.digits_[0];           // Least significant word of modulus
@@ -773,18 +864,19 @@ MontgomeryCtx::MontgomeryCtx(const BigInt& mod) {
 // Destructor
 MontgomeryCtx::~MontgomeryCtx() = default;
 
-// Convert to Montgomery representation: a_bar = a * R mod N
+// Convert to Montgomery representation: a_bar = a * R mod N.
+// mul(a, R2) = a * R^2 * R^{-1} = a * R mod N, using only the fast Montgomery
+// multiply (no schoolbook division).
 BigInt MontgomeryCtx::toMont(const BigInt& a) const {
-    // a_bar = a * R mod N
-    BigInt aR = BigInt::mulNaive(a, *R_);        // Multiply by R
-    BigInt result = BigInt::modNaive(aR, *mod_); // Take modulo N
-    return result;
+    BigInt a_mod = BigInt::modNaive(a, *mod_);  // cheap: returns a unchanged when a < N
+    return mul(a_mod, *R2_);
 }
 
-// Convert from Montgomery representation: a = a_bar * R^{-1} mod N
+// Convert from Montgomery representation: a = a_bar * R^{-1} mod N.
+// This is exactly a Montgomery reduction of a_bar, i.e. mul(a_bar, 1), so we do
+// not need to precompute R^{-1} with the (slow) extended Euclidean algorithm.
 BigInt MontgomeryCtx::fromMont(const BigInt& a_bar) const {
-    // a = a_bar * R^{-1} mod N
-    return BigInt::modNaive(BigInt::mulNaive(a_bar, *R_inv_), *mod_);
+    return mul(a_bar, BigInt::fromU64(1));
 }
 
 // Montgomery multiplication: (a_bar * b_bar * R^{-1}) mod N

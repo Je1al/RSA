@@ -25,13 +25,14 @@ public:
 
 private:
     /**
-     * @brief Miller-Rabin primality test
+     * @brief Single Miller-Rabin round for one witness base
      * @param d Odd integer such that n-1 = 2^s * d
+     * @param s Power of two in the factorisation n-1 = 2^s * d
      * @param n Number to test
-     * @param a Random base
-     * @return true if likely prime, false if composite
+     * @param a Witness base
+     * @return true if n is a probable prime to base a, false if a proves it composite
      */
-    bool millerTest(const BigInt& d, const BigInt& n, const BigInt& a);
+    bool millerTest(const BigInt& d, size_t s, const BigInt& n, const BigInt& a);
 
     /**
      * @brief Decompose n-1 into the form 2^s * d

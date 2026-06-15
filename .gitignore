@@ -1,0 +1,18 @@
+# Build output
+build/
+*.o
+*.obj
+*.a
+*.exe
+
+# Generated keys / artefacts
+*.pem
+*.der
+*.key
+keys/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
