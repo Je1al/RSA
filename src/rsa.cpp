@@ -215,8 +215,10 @@ bool RSA::generateKeys(PublicKey& pub, PrivateKey& priv, size_t bits, uint32_t e
         return true;
 
     }
-    catch (const exception& e) {
-        cerr << "Key generation failed: " << e.what() << endl;
+    catch (const exception&) {
+        // Generation can legitimately fail (e.g. e not coprime to phi for the
+        // drawn primes); the caller retries on a false return. A library should
+        // not print here.
         return false;
     }
 }
