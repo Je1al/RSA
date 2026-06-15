@@ -5,6 +5,7 @@
 #include "bigmath.hpp"
 
 #include <stdexcept>
+#include <algorithm>
 
 namespace oaep {
 

@@ -32,7 +32,7 @@ TEST_BINS    := $(patsubst tests/%.cpp,$(BUILD)/tests/%,$(TEST_SRCS))
 ATTACK_SRCS  := $(wildcard attacks/*.cpp)
 ATTACK_BINS  := $(patsubst attacks/%.cpp,$(BUILD)/attacks/%,$(ATTACK_SRCS))
 
-.PHONY: all cli test attacks asan clean
+.PHONY: all cli test attacks asan fuzz interop clean
 
 all: cli
 
@@ -74,6 +74,10 @@ $(BUILD)/attacks/%: attacks/%.cpp $(LIB_OBJS)
 asan:
 	$(MAKE) clean
 	$(MAKE) test OPT="-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer"
+
+# --- OpenSSL interoperability check ----------------------------------------
+interop: cli
+	./scripts/interop_openssl.sh $(BUILD)/rsa-cli
 
 # --- fuzzing (requires LLVM Clang with libFuzzer) --------------------------
 FUZZ_SRCS := $(wildcard fuzz/*.cpp)

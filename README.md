@@ -54,6 +54,8 @@ what was wrong and what this project changed.
   (`getentropy`/`getrandom`/`BCryptGenRandom`).
 - **RSA**: key generation, raw primitive, CRT decryption with base blinding.
 - **RSAES-OAEP** and **RSASSA-PSS** (PKCS#1 v2.2) with SHA-256 / MGF1.
+- **DER/PEM** key serialization (SPKI public, PKCS#8 private) that
+  **interoperates with OpenSSL** — keys, OAEP, and PSS validated both directions.
 - **Attack lab**: five runnable exploits with built-in defence demonstrations.
 - **Tests**: known-answer tests against FIPS / RFC / NIST CAVP vectors; clean
   under AddressSanitizer + UndefinedBehaviorSanitizer.
@@ -68,6 +70,7 @@ make              # build the CLI            -> build/rsa-cli
 make test         # build & run all KAT/unit tests
 make attacks      # build the attack demos   -> build/attacks/*
 make asan         # run the tests under ASan + UBSan
+make interop      # cross-check against OpenSSL (keys, OAEP, PSS)
 
 # or with CMake
 cmake -B build && cmake --build build && ctest --test-dir build
@@ -108,6 +111,17 @@ auto sig = pss::sign(priv, document);               // RSASSA-PSS
 bool ok  = pss::verify(pub, document, sig);
 ```
 
+## OpenSSL interoperability
+
+`make interop` round-trips keys and messages through OpenSSL in both directions
+and fails on any mismatch:
+
+- our SPKI/PKCS#8 PEM keys parse under `openssl pkey`;
+- our PSS signature verifies under `openssl dgst`, and an OpenSSL PSS signature
+  verifies under ours;
+- our OAEP ciphertext decrypts under `openssl pkeyutl`, and an OpenSSL OAEP
+  ciphertext decrypts under ours.
+
 ## Performance
 
 Apple M-class, `-O2`, from-scratch arithmetic:
@@ -122,11 +136,13 @@ Apple M-class, `-O2`, from-scratch arithmetic:
 
 ```
 include/      public headers
-src/          core library (bigint, rng, sha256, hmac, drbg, mgf1, oaep, pss, rsa)
+src/          core library (bigint, rng, sha256, hmac, drbg, mgf1, oaep, pss, rsa, keyio)
 src/app/      interactive console application
-apps/cli.cpp  entry point (interactive + `demo` subcommand)
+apps/cli.cpp  entry point (interactive + demo / genpem / sign / verify / oaep subcommands)
 tests/        known-answer & round-trip tests
 attacks/      offensive demonstrations (see docs/ATTACKS.md)
+fuzz/         libFuzzer harness
+scripts/      interop_openssl.sh — OpenSSL cross-validation
 docs/         SECURITY.md, DESIGN.md, ATTACKS.md
 ```
 

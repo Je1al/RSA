@@ -7,6 +7,8 @@
 #include <stdexcept>
 #include <random>
 #include <chrono>
+#include <algorithm>
+#include <utility>
 
 using namespace std;
 
