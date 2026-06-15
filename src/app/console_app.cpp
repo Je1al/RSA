@@ -592,8 +592,8 @@ void ConsoleApp::loadKeysFromFile() {
 
         // Verify key pair
         if (RSA::checkKeypair(pubKey, privKey)) {
-            currentPublicKey = make_unique<RSA::PublicKey>(move(pubKey));
-            currentPrivateKey = make_unique<RSA::PrivateKey>(move(privKey));
+            currentPublicKey = make_unique<RSA::PublicKey>(std::move(pubKey));
+            currentPrivateKey = make_unique<RSA::PrivateKey>(std::move(privKey));
             hasKeys = true;
 
             cout << "\nKeys loaded successfully!" << endl;
@@ -641,7 +641,6 @@ void ConsoleApp::saveKeysToFile() {
         }
 
         // Check if files exist
-        bool overwrite = false;
         if (FileHandler::fileExists(pubFilename) || FileHandler::fileExists(privFilename)) {
             cout << "\nWarning: One or both files already exist." << endl;
             cout << "Overwrite? (y/n): ";
@@ -654,7 +653,6 @@ void ConsoleApp::saveKeysToFile() {
                 waitForEnter();
                 return;
             }
-            overwrite = true;
         }
 
         cout << "\nSaving keys..." << endl;

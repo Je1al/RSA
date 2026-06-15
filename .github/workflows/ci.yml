@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  test:
+    name: test (${{ matrix.os }}, ${{ matrix.cxx }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        cxx: [g++, clang++]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run tests
+        run: make test CXX=${{ matrix.cxx }}
+      - name: Build attack demos
+        run: make attacks CXX=${{ matrix.cxx }}
+      - name: Run a couple of attack demos
+        run: |
+          ./build/attacks/fermat_factorization
+          ./build/attacks/common_modulus
+      - name: Secure-pipeline demo
+        run: make CXX=${{ matrix.cxx }} && ./build/rsa-cli demo
+
+  cmake:
+    name: cmake + ctest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build build -j
+      - run: ctest --test-dir build --output-on-failure
+
+  sanitizers:
+    name: ASan + UBSan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: make asan CXX=clang++
+
+  fuzz:
+    name: fuzz (OAEP/PSS)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install clang (libFuzzer)
+        run: sudo apt-get update && sudo apt-get install -y clang
+      - name: Build fuzzers
+        run: make fuzz CXX=clang++
+      - name: Run fuzzer (time-boxed)
+        run: ./build/fuzz_oaep -runs=100000 -max_total_time=45 -print_final_stats=1

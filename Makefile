@@ -75,5 +75,15 @@ asan:
 	$(MAKE) clean
 	$(MAKE) test OPT="-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer"
 
+# --- fuzzing (requires LLVM Clang with libFuzzer) --------------------------
+FUZZ_SRCS := $(wildcard fuzz/*.cpp)
+FUZZ_BINS := $(patsubst fuzz/%.cpp,$(BUILD)/%,$(FUZZ_SRCS))
+
+fuzz: $(FUZZ_BINS)
+
+$(BUILD)/%: fuzz/%.cpp $(LIB_SRCS)
+	@mkdir -p $(@D)
+	$(CXX) $(CXXSTD) -O1 -g -fsanitize=fuzzer,address,undefined $(INCLUDES) $< $(LIB_SRCS) -o $@
+
 clean:
 	rm -rf $(BUILD)

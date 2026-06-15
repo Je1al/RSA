@@ -658,7 +658,7 @@ bool TestSuite::testErrorHandling() {
 
         // Even exponent
         bool result2 = RSA::generateKeys(pubKey, privKey, 64, 65538);
-        allPassed &= checkCondition(result, false, "Should return false for even exponent");
+        allPassed &= checkCondition(result2, false, "Should return false for even exponent");
 
         // Test 2: Encryption with invalid key
         if (RSA::generateKeys(pubKey, privKey, 64, 65537)) {

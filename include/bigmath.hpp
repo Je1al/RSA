@@ -52,12 +52,11 @@ public:
 
 private:
 
-    uint32_t* digits_;  
-
-
-    size_t length_;  
-
-    int sign_;             
+    // These limbs are manipulated through a layout-compatible view inside
+    // bigmath.cpp (see BigIntAccess), so the class body itself never names them.
+    [[maybe_unused]] uint32_t* digits_;
+    [[maybe_unused]] size_t    length_;
+    int sign_;
 };
 
 
