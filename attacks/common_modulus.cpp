@@ -17,19 +17,22 @@ int main() {
     std::cout << "Common-modulus attack: shared n, two coprime exponents\n";
 
     // Build a key and read its factorisation so we can pick valid exponents.
+    // Retry until we find a second exponent coprime to phi (avoids any chance of
+    // a zero divisor later).
     RSA::PublicKey pub;
     RSA::PrivateKey priv;
-    while (!RSA::generateKeys(pub, priv, 1024)) {}
-    BigInt n   = *pub.n;
-    BigInt phi = mul(sub(*priv.p, u(1)), sub(*priv.q, u(1)));
-
-    // Two distinct public exponents, both coprime to phi and to each other.
-    BigInt e1 = u(65537);
-    BigInt e2;
-    for (uint64_t cand : {3ull, 5ull, 7ull, 11ull, 13ull, 17ull, 19ull, 23ull, 65539ull}) {
-        BigInt c = u(cand);
-        if (eq(exported_gcd_euclidean(c, phi), u(1)) && eq(exported_gcd_euclidean(c, e1), u(1))) {
-            e2 = c; break;
+    BigInt n, phi, e1 = u(65537), e2;
+    bool haveE2 = false;
+    while (!haveE2) {
+        while (!RSA::generateKeys(pub, priv, 1024)) {}
+        n   = *pub.n;
+        phi = mul(sub(*priv.p, u(1)), sub(*priv.q, u(1)));
+        for (uint64_t cand : {3ull, 5ull, 7ull, 11ull, 13ull, 17ull, 19ull, 23ull, 65539ull}) {
+            BigInt c = u(cand);
+            if (eq(exported_gcd_euclidean(c, phi), u(1)) &&
+                eq(exported_gcd_euclidean(c, e1), u(1))) {
+                e2 = c; haveE2 = true; break;
+            }
         }
     }
     std::cout << "Shared modulus n (" << n.bitLength() << " bits); e1 = " << e1.toHex()

@@ -13,8 +13,11 @@ CXX      ?= c++
 CXXSTD   ?= -std=c++17
 OPT      ?= -O2
 WARN     ?= -Wall -Wextra
+# BigInt reaches its private limbs through a layout-compatible view, which is a
+# type-punning pattern; -fno-strict-aliasing keeps it correct under GCC -O3.
+SAFETY   := -fno-strict-aliasing
 INCLUDES := -Iinclude
-CXXFLAGS ?= $(CXXSTD) $(OPT) $(WARN) $(INCLUDES)
+CXXFLAGS ?= $(CXXSTD) $(OPT) $(WARN) $(SAFETY) $(INCLUDES)
 
 BUILD    := build
 OBJ      := $(BUILD)/obj
@@ -87,7 +90,7 @@ fuzz: $(FUZZ_BINS)
 
 $(BUILD)/%: fuzz/%.cpp $(LIB_SRCS)
 	@mkdir -p $(@D)
-	$(CXX) $(CXXSTD) -O1 -g -fsanitize=fuzzer,address,undefined $(INCLUDES) $< $(LIB_SRCS) -o $@
+	$(CXX) $(CXXSTD) -O1 -g $(SAFETY) -fsanitize=fuzzer,address,undefined $(INCLUDES) $< $(LIB_SRCS) -o $@
 
 clean:
 	rm -rf $(BUILD)

@@ -142,12 +142,13 @@ int b64val(char c) {
 
 Bytes base64decode(const std::string& in) {
     Bytes out;
-    int buf = 0, bits = 0;
+    uint32_t buf = 0;       // unsigned: left shift never overflows into the sign bit
+    int bits = 0;
     for (char c : in) {
         if (c == '=') break;
         int v = b64val(c);
         if (v < 0) continue;  // skip whitespace / newlines
-        buf = (buf << 6) | v;
+        buf = (buf << 6) | static_cast<uint32_t>(v);
         bits += 6;
         if (bits >= 8) { bits -= 8; out.push_back(static_cast<uint8_t>((buf >> bits) & 0xFF)); }
     }

@@ -545,10 +545,10 @@ BigInt& BigInt::operator=(const BigInt& other) {
 // Destructor
 BigInt::~BigInt() {
     BigIntAccess& acc = GET_ACCESS(*this);
-    acc.digits_ = nullptr;
+    delete[] acc.digits_;  // free the buffer BEFORE clearing the pointer
+    acc.digits_ = nullptr; // (the original order deleted nullptr and leaked it)
     acc.length_ = 0;
     acc.sign_ = 0;
-    delete[] acc.digits_;  // Free memory
 }
 
 // Convert to hexadecimal string

@@ -9,6 +9,9 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 add_compile_options(-Wall -Wextra)
+# BigInt type-puns its storage through a layout-compatible view; disable
+# strict-aliasing optimizations so GCC -O3 keeps it correct.
+add_compile_options(-fno-strict-aliasing)
 
 # Optional sanitizer build:  cmake -DENABLE_SANITIZERS=ON ..
 option(ENABLE_SANITIZERS "Build with AddressSanitizer + UndefinedBehaviorSanitizer" OFF)
